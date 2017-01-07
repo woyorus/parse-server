@@ -1,0 +1,13 @@
+{
+  "name": "node-instrumentation-manager",
+  "version": "1.2.0",
+  "description": "Manager for instrumenting Node.js code",
+  "main": "src/index.js",
+  "author": "AmpMe, Inc",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "prom-client": "^7.0.0"
+  },
+  "devDependencies": {}
+}

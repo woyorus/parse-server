@@ -233,9 +233,9 @@ export function allowMethodOverride(req, res, next) {
 }
 
 export function handleParseErrors(err, req, res, next) {
+  let httpStatus;
   // TODO: Add logging as those errors won't make it to the PromiseRouter
   if (err instanceof Parse.Error) {
-    var httpStatus;
 
     // TODO: fill out this mapping
     switch (err.code) {
@@ -252,14 +252,19 @@ export function handleParseErrors(err, req, res, next) {
     res.status(httpStatus);
     res.json({code: err.code, error: err.message});
   } else if (err.status && err.message) {
-    res.status(err.status);
+    httpStatus = err.status;
+    res.status(httpStatus);
     res.json({error: err.message});
   } else {
     log.error('Uncaught internal server error.', err, err.stack);
-    res.status(500);
+    httpStatus = 500;
+    res.status(httpStatus);
     res.json({code: Parse.Error.INTERNAL_SERVER_ERROR,
       message: 'Internal server error.'});
   }
+
+  req.app.get('metrics')['error_count'].inc({ path: req.path, code: httpStatus });
+
   next(err);
 }
 
@@ -267,6 +272,7 @@ export function enforceMasterKeyAccess(req, res, next) {
   if (!req.auth.isMaster) {
     res.status(403);
     res.end('{"error":"unauthorized: master key is required"}');
+    req.app.get('metrics')['error_count'].inc({ path: req.path, code: 403 });
     return;
   }
   next();
@@ -285,4 +291,30 @@ export function promiseEnforceMasterKeyAccess(request) {
 function invalidRequest(req, res) {
   res.status(403);
   res.end('{"error":"unauthorized"}');
+  req.app.get('metrics')['error_count'].inc({ path: req.path, code: 403 });
+}
+
+export function instrumentRequest(req, res, next) {
+  const received = Date.now();
+  const metrics = req.app.get('metrics');
+
+  metrics['request_count'].inc({ path: req.path });
+
+  const end = res.end;
+
+  res.end = function(chunk, encoding) {
+    const latency = Date.now() - received;
+
+    const labels = {
+      code: res.statusCode,
+      path: req.path
+    };
+
+    metrics['latency_ms'].observe(labels, latency);
+
+    res.end = end;
+    res.end(chunk, encoding);
+  };
+
+  next();
 }

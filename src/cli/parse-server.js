@@ -5,6 +5,7 @@ import definitions from './definitions/parse-server';
 import cluster from 'cluster';
 import os from 'os';
 import runner from './utils/runner';
+import * as instrumentation from 'node-instrumentation-manager';
 
 const help = function(){
   console.log('  Get Started guide:');
@@ -33,9 +34,22 @@ function startServer(options, callback) {
   const api = new ParseServer(options);
   const sockets = {};
 
+  const instrumentationManager = new instrumentation.InstrumentationManager(
+      new instrumentation.drivers.Prometheus(),
+      true
+  );
+
+  app.set('instrumentationManager', instrumentationManager);
+  app.set('metrics', initMetrics(instrumentationManager));
+
+  instrumentationManager.serve();
+
   app.use(options.mountPath, api);
 
   const server = app.listen(options.port, options.host, callback);
+
+  instrumentationManager.setHealthy(true);
+
   server.on('connection', initializeConnections);
 
   if (options.startLiveQueryServer || options.liveQueryServerOptions) {
@@ -46,6 +60,31 @@ function startServer(options, callback) {
       });
     }
     ParseServer.createLiveQueryServer(liveQueryServer, options.liveQueryServerOptions);
+  }
+
+  function initMetrics(manager) {
+    const metrics = {};
+
+    metrics['request_count'] = manager.createCounter(
+      'request_count',
+      'Number of requests served',
+      ['path']
+    );
+
+    metrics['latency_ms'] = manager.createHistogram(
+        'latency_ms',
+        'Response latency in milliseconds',
+        ['path', 'code'],
+        { buckets: instrumentation.exponentialBuckets(1, 2, 10).map(Math.round) }
+    );
+
+    metrics['error_count'] = manager.createCounter(
+      'error_count',
+      'Number of errors served',
+      ['path', 'code'],
+    );
+
+    return metrics;
   }
 
   function initializeConnections(socket) {

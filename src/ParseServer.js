@@ -305,6 +305,7 @@ class ParseServer {
     api.use(bodyParser.json({ 'type': '*/*' , limit: maxUploadSize }));
     api.use(middlewares.allowCrossDomain);
     api.use(middlewares.allowMethodOverride);
+    api.use(middlewares.instrumentRequest);
     api.use(middlewares.handleParseHeaders);
 
     const appRouter = ParseServer.promiseRouter({ appId });
